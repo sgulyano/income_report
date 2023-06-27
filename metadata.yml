@@ -1,0 +1,12 @@
+Version: 1.0.0
+CompanyName: Thammasat University
+FileDescription: Income Reconciliation
+InternalName: Income Reconciliation
+LegalCopyright: © Thammasat University. All rights reserved.
+OriginalFilename: income_report_generator.exe
+ProductName: Income Report Generator App
+Translation:
+  - langID: 0
+    charsetID: 1200
+  - langID: 1033
+    charsetID: 1252
