@@ -23,5 +23,5 @@ Income Reconciliation Report Generator
 1. Pyinstaller
 2. tkinter
 3. tkinterdnd2
-4. openpyxl
+4. openpyxl=3.0.9
 5. pandas

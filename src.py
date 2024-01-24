@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import os.path
 from re import search
 from datetime import datetime
@@ -32,27 +34,42 @@ double_border = Border(left=Side(style='thin'),
                        top=Side(style='thin'), 
                        bottom=Side(style='double'))
 
-program_code = {'DSI': 12240500161}
+# program_code = {'DSI': [12240500161, 12240500166], 'PPE (ทพจ)':[12240400161, 12240400166], 'PPE (Inter)':[12246400264, 12246400266]}
+program_code = {'DSI': ("^122405001[0-9][0-9]", "ศูนย์รังสิต", "หลักสูตรวิทยาศาสตรบัณฑิต สาขาวิชาวิทยาศาสตร์และนวัตกรรมข้อมูล"), 
+                'PPE (ทพจ)': ("^122404001[0-9][0-9]", "ศูนย์ท่าพระจันทร์", "หลักสูตรศิลปศาสตรบัณฑิต สาขาวิชาปรัชญา การเมือง และเศรษฐศาสตร์ (ท่าพระจันทร์)"), 
+                'PPE (Inter)': ("^122464002[0-9][0-9]", "ศูนย์ท่าพระจันทร์", "หลักสูตรศิลปศาสตรบัณฑิต สาขาวิชาปรัชญา การเมือง และเศรษฐศาสตร์ (หลักสูตรนานาชาติ)")}
 
-def generate_report(input_files, output_path, prog_code=program_code['DSI']):
+
+def generate_report(input_files, output_path, prog_code=program_code['DSI'][0], campus=program_code['DSI'][1], prog_name=program_code['DSI'][2]):
     wb = Workbook()
     wb.remove(wb.active)
 
+    # sort by date
     dates = []
-    total_stats = []
-    dfs = []
     for excel_path in input_files:
         excel_fn = os.path.basename(excel_path)
         # extract transactions' date
         match = search(r'\d{4}\d{2}\d{2}', excel_fn)
         date = datetime.strptime(match.group(), '%Y%m%d').date()
         dates.append(date)
+
+    dictionary = dict(zip(dates, input_files))
+    
+    total_stats = []
+    dfs = []
+    for date, excel_path in sorted(dictionary.items()):
         # extract transactions' summary
-        df = extract_excel(excel_path, prog_code)
+        df = extract_excel(excel_path, prog_code, campus)
+        if not isinstance(df, pd.DataFrame): # check errors in extract data from an excel
+            print('No records extract from ', excel_path)
+            continue  # if error, skip
         # export to excel
-        total_stat = write_oneday_report(df, wb, date)
+        total_stat = write_oneday_report(df, wb, date, prog_name)
         total_stats.extend(total_stat)
         dfs.append(df)
+    
+    if len(dfs) == 0: # check errors in extract data from excels
+        return -2  # code for no records
 
     # warning when data of multiple months are provided
     month = list(set([(d.month, d.year) for d in dates]))
@@ -61,21 +78,23 @@ def generate_report(input_files, output_path, prog_code=program_code['DSI']):
     
     write_summary_report(wb, dfs)
 
-    write_overall_report(wb, total_stats, month)
+    write_overall_report(wb, total_stats, month, prog_name)
 
     _font = Font(name="TH SarabunPSK", sz=16)
     {k: setattr(DEFAULT_FONT, k, v) for k, v in _font.__dict__.items()}
     wb.save(output_path)
     return dfs
 
-def extract_excel(path, prog_code):
+def extract_excel(path, prog_code, campus):
     cols = ["รายได้คณะ", "กองทุนคณะ.1", "รายได้คณะ.2", "รวม"]
     
     df = pd.read_excel(path, header=1, sheet_name="Detail", dtype={'เลขทะเบียน':str})
     df[cols] = df[cols].astype('float64')   # convert all numbers to float
     df = df.assign(dep_income=df['รายได้คณะ'] + df['กองทุนคณะ.1'] + df['รายได้คณะ.2'])
 
-    df = df[df['รหัสหลักสูตร'] == prog_code]  # keep only only DSI students
+    # df = df[df['รหัสหลักสูตร'].isin(prog_code)]  # keep only only DSI students
+    df = df[df['วิทยาเขต'] == campus]
+    df = df[df['รหัสหลักสูตร'].astype(str).str.match(prog_code)]
     df_filtered = df[['วิทยาเขต', 
                       'คณะ', 
                       'เลขทะเบียน', 
@@ -88,6 +107,8 @@ def extract_excel(path, prog_code):
                       'รายได้คณะ.2', 
                       'dep_income', 
                       'รวม']].copy()
+    if df_filtered.shape[0] <= 0:
+        return 0
     df_filtered['รหัส'] = df_filtered.apply(lambda row: row['เลขทะเบียน'].strip()[:2], axis = 1)
     return df_filtered.set_index(['ปีการศึกษา', 'ภาค', 'รหัส'])
 
@@ -98,7 +119,7 @@ def write_summary_report(wb, dfs):
 
     for academic_term, d in df.groupby(level=[0,1]):
         # calculate summary
-        ov = d.groupby(level=2).agg(sum)
+        ov = d.groupby(level=2).agg("sum")
         ov['count'] = d.groupby(level=2).size()
         ov = ov[['count', 'รวม', 'รายได้คณะ', 'กองทุนคณะ.1', 'รายได้คณะ.2', 'dep_income']]
 
@@ -147,7 +168,7 @@ def write_summary_report(wb, dfs):
             for cell in row:
                 cell.border = thin_border
 
-def write_overall_report(wb, total_stats, month):
+def write_overall_report(wb, total_stats, month, prog_name):
     # group data together
     data = {}
     for k, v in total_stats:
@@ -172,7 +193,7 @@ def write_overall_report(wb, total_stats, month):
 
         ws.merge_cells('A2:F2')  
         cell = ws.cell(row=2, column=1)
-        cell.value = 'หลักสูตรวิทยาศาสตรบัณฑิต สาขาวิชาวิทยาศาสตร์และนวัตกรรมข้อมูล'
+        cell.value = prog_name
 
         ws.append([None, '18\r\nค่าหน่วยกิต', '01\nค่าธรรมเนียมเพื่อการศึกษาและพัฒนามหาวิทยาลัย', '31 / 98\nค่าธรรมเนียมพิเศษ (อื่นๆ)', None, None])
         ws.append([None, 'รายได้คณะ', 'กองทุนคณะ', 'รายได้คณะ', 'รวม\nรายได้คณะ', 'รวม\nค่าลงทะเบียน'])
@@ -244,7 +265,7 @@ def write_overall_report(wb, total_stats, month):
                 cell.border = thin_border
 
 
-def write_oneday_report(df, wb, date):
+def write_oneday_report(df, wb, date, prog_name):
     total_stat = []
     for d, new_df in df.groupby(level=[0,1]):
         ws = wb.create_sheet(date.strftime("%d%m%Y"))
@@ -263,7 +284,7 @@ def write_oneday_report(df, wb, date):
         
         ws.merge_cells('A2:L2')  
         cell = ws.cell(row=2, column=1)
-        cell.value = 'หลักสูตรวิทยาศาสตรบัณฑิต สาขาวิชาวิทยาศาสตร์และนวัตกรรมข้อมูล'
+        cell.value = prog_name
         
         ws.append([None, None, None, None, None, None, None, '18\r\nค่าหน่วยกิต', '01\nค่าธรรมเนียมเพื่อการศึกษาและพัฒนามหาวิทยาลัย', '31 / 98\nค่าธรรมเนียมพิเศษ (อื่นๆ)', None, None])
         ws.append(['วิทยาเขต', 'คณะ', 'เลขทะเบียน', 'เลขที่ใบเสร็จ', 'ชื่อ นามสกุล', 'ปีการศึกษา', 'ภาค', 'รายได้คณะ', 'กองทุนคณะ', 'รายได้คณะ', 'รวม\nรายได้คณะ', 'รวม\nค่าลงทะเบียน'])

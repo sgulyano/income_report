@@ -1,0 +1,15 @@
+
+hook-tkinterdnd2.py
+
+tkinterdnd2/
+
+__pycache__/
+
+build/
+
+dist/
+
+file_version_info.txt
+
+main.spec
+.ipynb_checkpoints/

@@ -4,16 +4,27 @@ from tkinterdnd2 import DND_FILES, TkinterDnD
 import os
 import sys
 
-from src import generate_report
+from src import generate_report, program_code
+
 
 class ExcelFileSelector(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Income Reconciliation")
+        self.title("Income Reconciliation 2566")
         bundle_dir = getattr(sys, '_MEIPASS', os.path.abspath(os.path.dirname(__file__)))
         self.iconbitmap(os.path.abspath(os.path.join(bundle_dir, "icon.ico")))
+        # self.iconbitmap("icon.ico")
         self.files = []
         
+        container = tk.Frame(self)
+        container.pack()
+        ttk.Label(container, text="หลักสูตร").pack(side=tk.LEFT, expand=True)
+        self.combo = ttk.Combobox(container,
+            state="readonly",
+            values=list(program_code.keys())
+        )
+        self.combo.pack(side=tk.LEFT, expand=True)
+
         # Create listbox
         self.listbox = tk.Listbox(self, width=100, height=20, selectmode=tk.MULTIPLE)
         self.listbox.pack(fill=tk.BOTH, expand=True)
@@ -63,6 +74,9 @@ class ExcelFileSelector(TkinterDnD.Tk):
             del self.files[index]
     
     def process_file(self):
+        if self.combo.get() == '':
+            tk.messagebox.showerror(title="Error", message="Please select a programme first.")
+            return
         if len(self.files) == 0:
             tk.messagebox.showerror(title="Error", message="Please select a file first.")
             return
@@ -74,12 +88,19 @@ class ExcelFileSelector(TkinterDnD.Tk):
         output_path = filedialog.asksaveasfilename(defaultextension='.xlsx', filetypes=[("Excel files", "*.xlsx")])
         
         if output_path:
-            try:
-                result = generate_report(self.files, output_path)
-            except Exception as e:
-                print(e)
-                tk.messagebox.showerror(title="Error", message="Error in generating report. Contact Aj.Sarun.")
+            # try:
+            code, campus, prog_name = program_code[self.combo.get()]
+            result = generate_report(self.files, output_path, code, campus, prog_name)
+            if result == -1:
+                tk.messagebox.showerror(title="Error", message="Error in generating report.")
                 return
+            elif result == -2:
+                tk.messagebox.showerror(title="Error", message="No records for the selected program.")
+                return
+            # except Exception as e:
+            #     print(e)
+            #     tk.messagebox.showerror(title="Error", message="Error in generating report. Contact Aj.Sarun.")
+            #     return
             tk.messagebox.showinfo(title="Success", message=f"File processed and output saved to {output_path}.")
         return
 
